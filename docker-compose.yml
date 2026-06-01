@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+
+  # ─────────────────────────────────────────────
+  # BASE DE DATOS — imagen oficial Docker Hub
+  # https://hub.docker.com/_/postgres
+  # Soporta: amd64, arm64 (Mac M1/M2/M3)
+  # ─────────────────────────────────────────────
+  db:
+    image: postgres:16
+    container_name: taskflow_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: taskuser
+      POSTGRES_PASSWORD: taskpass
+      POSTGRES_DB: taskflow
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - taskflow_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U taskuser -d taskflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─────────────────────────────────────────────
+  # BACKEND — FastAPI + Python
+  # Puerto interno: 8000
+  # ─────────────────────────────────────────────
+  backend:
+    build: ./backend
+    container_name: taskflow_backend
+    restart: unless-stopped
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: taskflow
+      DB_USER: taskuser
+      DB_PASSWORD: taskpass
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - taskflow_net
+
+  # ─────────────────────────────────────────────
+  # FRONTEND — Nginx sirviendo HTML + proxy API
+  # Puerto: 80 (host) → 80 (contenedor)
+  # ─────────────────────────────────────────────
+  frontend:
+    build: ./frontend
+    container_name: taskflow_frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - taskflow_net
+
+networks:
+  taskflow_net:
+    driver: bridge
+
+volumes:
+  postgres_data:
